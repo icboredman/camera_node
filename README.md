@@ -1,13 +1,17 @@
-# cherokey_ws
+# Camera
 
-A [ROS](http://www.ros.org) workspace that implements a configuration of ROS Navigation Stack for a four-wheeled robot that uses a **stereo camera** as a primary sensor.
+A [ROS](http://www.ros.org) node that processes data received from [TeensyCam](https://github.com/icboredman/TeensyCam-HW) - stereo camera module.
 
-### Components:
+Depending on various options defined in [camera.launch](camera.launch), it can generate and broadcast the following ROS topics:
+* raw (both left and right) images
+* rectified images
+* disparity image
+* point cloud
+* emulated laser scan
 
-* [Camera](https://github.com/icboredman/cherokey_ws/tree/master/src/camera) - driver node for [TeensyCam](https://github.com/icboredman/TeensyCam-HW)
-* 
-*
+The node implements [ELAS dense stereo algorithm](http://www.cvlibs.net/software/libelas/), specifically, its OpenMP-version.
 
 
 ---
-More info in my blog page: https://BoredomProjects.net/index.php/projects/robot-navigation-using-stereo-vision-part-2
+More info about the project is here: https://BoredomProjects.net/index.php/projects/robot-navigation-using-stereo-vision-part-2
+
