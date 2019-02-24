@@ -58,6 +58,7 @@
 #include <cstdio>
 #include <stdio.h>
 #include <pthread.h>
+#include <numeric>
 
 #include <time.h>
 #define TIMESPEC_DIFF_MS(a,b) (((float)(b.tv_sec  - a.tv_sec )) * 1e+3 +   \
