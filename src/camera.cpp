@@ -82,6 +82,7 @@ pthread_mutex_t imgCopyMutex;
 //Mat imageR(serial::Camera::MAX_IMAGE_HEIGHT, serial::Camera::MAX_IMAGE_WIDTH, CV_8UC1, Scalar(0));
 //Mat imageL(serial::Camera::MAX_IMAGE_HEIGHT, serial::Camera::MAX_IMAGE_WIDTH, CV_8UC1, Scalar(0));
 Mat imageR, imageL;
+ros::Time image_cap_time;
 
 volatile bool got_camera_frame = false;
 
@@ -91,9 +92,10 @@ void EqualizeHistogram1(Mat& image, int imgLines);
 void EqualizeHistogram2(Mat& image, int imgLines);
 void DrawHistogram(Mat& image, int imgLines);
 Mat GetRectificationMap(FileStorage &calib_file, Mat &lx, Mat &ly, Mat &rx, Mat &ry, Size calImgSize, Size outImgSize);
-Mat GenerateDisparityImg(Mat &left, Mat &right, int disp_rows);
+Mat GenerateDisparityImg(Mat &left, Mat &right, int disp_rows=0);
 
-void PublishImage(image_transport::Publisher &pub, Mat &img, ros::Time &cap_time);
+void PublishImageInfo(image_transport::CameraPublisher &pub, Mat &img, ros::Time &cap_time, std::string encoding=sensor_msgs::image_encodings::MONO8);
+void PublishImage(image_transport::Publisher &pub, Mat &img, ros::Time &cap_time, std::string encoding=sensor_msgs::image_encodings::MONO8);
 Mat  PublishDisparity(image_transport::Publisher &pub, Mat &disp, ros::Time &cap_time);
 void PublishPointCloud(ros::Publisher &pub, Mat &img3D, ros::Time &cap_time,
                        int used_img_lines, float clearance_top, float clearance_bot,
@@ -148,15 +150,16 @@ int main(int argc, char** argv)
   // publish and subscribe under this name space
   ros::NodeHandle n;
 
-  image_transport::ImageTransport it1(n), it2(n), it3(n), it4(n), it5(n);
-  image_transport::Publisher pub_raw_l, pub_raw_r, pub_rect_l, pub_rect_r, pub_disp;
+  image_transport::ImageTransport it1(n), it2(n), it3(n), it4(n), it5(n), it6(n);
+  image_transport::CameraPublisher pub_raw_l, pub_raw_r, pub_rect_l, pub_rect_r;
+  image_transport::Publisher pub_disp, pub_depth;
   ros::Publisher pub_cloud, pub_scan;
 
 
   if (opt.publish_raw_image) {
     ROS_INFO("Publishing raw images...");
-    pub_raw_l = it1.advertise("camera/left/image_raw", 1);
-    pub_raw_r = it2.advertise("camera/right/image_raw", 1);
+    pub_raw_l = it1.advertiseCamera("camera/left/image_raw", 1);
+    pub_raw_r = it2.advertiseCamera("camera/right/image_raw", 1);
   }
 
   Mat mapLx, mapLy, mapRx, mapRy; // disparity coordinate maps
@@ -164,6 +167,7 @@ int main(int argc, char** argv)
 
   if (opt.publish_rectified ||
       opt.publish_disparity ||
+      opt.publish_depth     ||
       opt.publish_laserscan ||
       opt.publish_pointcloud)
   {
@@ -178,22 +182,26 @@ int main(int argc, char** argv)
     disp2depth = GetRectificationMap(calib_file,
                                      mapLx, mapLy, mapRx, mapRy,
                                      Size(serial::Camera::MAX_IMAGE_WIDTH, serial::Camera::MAX_IMAGE_HEIGHT),
-                                     Size(serial::Camera::MAX_IMAGE_WIDTH, opt.camconfig.n_lines));
-    //correct -Cy in matrix Q due to different image height
-    disp2depth.at<double>(1,3) *= (double)opt.disparity_lines / (double)serial::Camera::MAX_IMAGE_HEIGHT;
+                                     Size(serial::Camera::MAX_IMAGE_WIDTH, opt.rect_lines));
     ROS_DEBUG_STREAM("Rectification done");
 
     if (opt.publish_rectified)
     {
       ROS_INFO("Publishing rectified images...");
-      pub_rect_l = it3.advertise("camera/left/image_rect", 1);
-      pub_rect_r = it4.advertise("camera/right/image_rect", 1);
+      pub_rect_l = it3.advertiseCamera("camera/left/image_rect", 1);
+      pub_rect_r = it4.advertiseCamera("camera/right/image_rect", 1);
     }
 
     if (opt.publish_disparity)
     {
       ROS_INFO("Publishing disparity image...");
       pub_disp = it5.advertise("camera/disparity", 1);
+    }
+
+    if (opt.publish_depth)
+    {
+      ROS_INFO("Publishing depth image...");
+      pub_depth = it6.advertise("camera/depth", 1);
     }
 
     if (opt.publish_pointcloud)
@@ -242,10 +250,10 @@ int main(int argc, char** argv)
     {
       if (opt.profiling)
         TIMESPEC_PUSH(timer);
-      capture_time = ros::Time::now();
 
       // copy out images
       pthread_mutex_lock(&imgCopyMutex);
+      capture_time = image_cap_time;
       imageR.copyTo(imR);
       imageL.copyTo(imL);
       got_camera_frame = false;
@@ -273,8 +281,8 @@ int main(int argc, char** argv)
           ZoomCenter(imR, 100, 4);
           ZoomCenter(imL, 100, 4);
         }
-        PublishImage(pub_raw_l, imL, capture_time);
-        PublishImage(pub_raw_r, imR, capture_time);
+        PublishImageInfo(pub_raw_l, imL, capture_time);
+        PublishImageInfo(pub_raw_r, imR, capture_time);
         if (write_image)
         {
           WriteImage(imL, opt.image_save_path + "raw_left", write_image_counter);
@@ -287,19 +295,21 @@ int main(int argc, char** argv)
 
       if (opt.publish_rectified ||
           opt.publish_disparity ||
+          opt.publish_depth     ||
           opt.publish_laserscan ||
           opt.publish_pointcloud)
       {
-        Mat imLrec(imL.size(), imL.type());
-        Mat imRrec(imR.size(), imR.type());
+        // rectified images must have the same size as rectification maps (set by GetRectificationMap)
+        Mat imLrec(mapLx.size(), imL.type());
+        Mat imRrec(mapRx.size(), imR.type());
         // rectify images
         cv::remap(imL, imLrec, mapLx, mapLy, cv::INTER_LINEAR);
         cv::remap(imR, imRrec, mapRx, mapRy, cv::INTER_LINEAR);
 
         if (opt.publish_rectified)
         {
-          PublishImage(pub_rect_l, imLrec, capture_time);
-          PublishImage(pub_rect_r, imRrec, capture_time);
+          PublishImageInfo(pub_rect_l, imLrec, capture_time);
+          PublishImageInfo(pub_rect_r, imRrec, capture_time);
           if (write_image)
           {
             WriteImage(imLrec, opt.image_save_path + "rect_left", write_image_counter);
@@ -310,11 +320,12 @@ int main(int argc, char** argv)
         if (opt.profiling)
           TIMESPEC_PUSH(timer);
 
-        if (opt.publish_disparity ||
+        if (opt.publish_disparity  ||
+            opt.publish_depth      ||
             opt.publish_pointcloud ||
             opt.publish_laserscan)
         {
-          Mat disparity = GenerateDisparityImg(imLrec, imRrec, opt.disparity_lines);
+          Mat disparity = GenerateDisparityImg(imLrec, imRrec);
 
           if (opt.publish_disparity)
           {
@@ -326,13 +337,24 @@ int main(int argc, char** argv)
           if (opt.profiling)
             TIMESPEC_PUSH(timer);
 
-          if (opt.publish_pointcloud ||
+          if (opt.publish_depth      ||
+              opt.publish_pointcloud ||
               opt.publish_laserscan)
           {
             // prepare 3-channel matrix containing reprojected 3D world coordinates
             Mat im3D = cv::Mat::zeros(disparity.size(), CV_32FC3);
             // convert disparity to array of 3D points
             cv::reprojectImageTo3D(disparity, im3D, disp2depth);
+
+            if (opt.publish_depth)
+            {
+              Mat im3Dchan[3];
+              cv::split(im3D, im3Dchan);
+              PublishImage(pub_depth, im3Dchan[2], capture_time, sensor_msgs::image_encodings::TYPE_32FC1);
+            }
+
+            if (opt.profiling)
+              TIMESPEC_PUSH(timer);
 
             if (opt.publish_pointcloud)
             {
@@ -386,12 +408,13 @@ int main(int argc, char** argv)
         static timespec stop_time, last_stop_time;
         clock_gettime(CLOCK_MONOTONIC, &stop_time);
 
-        ROS_INFO( "TIME[ms]: image=%.1f rect=%.1f disp=%.1f cloud=%.1f laser=%.1f TOTAL=%.1f FPS=%.1f",
+        ROS_INFO( "TIME[ms]: image=%.1f rect=%.1f disp=%.1f depth=%.1f cloud=%.1f laser=%.1f TOTAL=%.1f FPS=%.1f",
                   TIMESPEC_DIFF_MS(timer[0], timer[1]),
                   timer.size() > 2 ? TIMESPEC_DIFF_MS(timer[1], timer[2]) : NAN,
                   timer.size() > 3 ? TIMESPEC_DIFF_MS(timer[2], timer[3]) : NAN,
                   timer.size() > 4 ? TIMESPEC_DIFF_MS(timer[3], timer[4]) : NAN,
                   timer.size() > 5 ? TIMESPEC_DIFF_MS(timer[4], timer[5]) : NAN,
+                  timer.size() > 6 ? TIMESPEC_DIFF_MS(timer[5], timer[6]) : NAN,
                   TIMESPEC_DIFF_MS(timer[0], stop_time),
                   1000.0 / TIMESPEC_DIFF_MS(last_stop_time, stop_time) );
         last_stop_time = stop_time;
@@ -506,6 +529,9 @@ Mat GetRectificationMap(FileStorage &calib_file, Mat &lx, Mat &ly, Mat &rx, Mat 
     }
   }
 
+  //correct -Cy in matrix Q due to different image height
+  Q.at<double>(1,3) *= (double)outImgSize.height / (double)calImgSize.height;
+
   // return disparity-to-depth mapping matrix
   return Q;
 }
@@ -516,6 +542,9 @@ Mat GenerateDisparityImg(Mat &left, Mat &right, int disp_rows)
 {
   if (left.empty() || right.empty())
     return left;
+
+  if (disp_rows == 0)
+    disp_rows = left.rows;
 
   assert(disp_rows <= left.rows);
 
@@ -540,12 +569,31 @@ Mat GenerateDisparityImg(Mat &left, Mat &right, int disp_rows)
 }
 
 
-void PublishImage(image_transport::Publisher &pub, Mat &img, ros::Time &cap_time)
+void PublishImageInfo(image_transport::CameraPublisher &pub, Mat &img, ros::Time &cap_time, std::string encoding)
 {
   std_msgs::Header header = std_msgs::Header();
   header.stamp = cap_time;
+  header.frame_id = "camera_frame";
   sensor_msgs::ImagePtr msg = cv_bridge::CvImage(header,
-                                                 sensor_msgs::image_encodings::MONO8,
+                                                 encoding,
+                                                 img).toImageMsg();
+
+  sensor_msgs::CameraInfoPtr ci(new sensor_msgs::CameraInfo());
+  ci->header = header;
+  ci->height = img.rows;
+  ci->width = img.cols;
+
+  pub.publish(msg, ci);
+}
+
+
+void PublishImage(image_transport::Publisher &pub, Mat &img, ros::Time &cap_time, std::string encoding)
+{
+  std_msgs::Header header = std_msgs::Header();
+  header.stamp = cap_time;
+  header.frame_id = "camera_frame";
+  sensor_msgs::ImagePtr msg = cv_bridge::CvImage(header,
+                                                 encoding,
                                                  img).toImageMsg();
   pub.publish(msg);
 }
@@ -565,12 +613,7 @@ Mat PublishDisparity(image_transport::Publisher &pub, Mat &disp, ros::Time &cap_
   cv::applyColorMap(disp_scaled, disp_colored, COLORMAP_JET);
 
   // publish disparity image
-  std_msgs::Header header = std_msgs::Header();
-  header.stamp = cap_time;
-  sensor_msgs::ImagePtr msg = cv_bridge::CvImage(header,
-                                                 sensor_msgs::image_encodings::BGR8,
-                                                 disp_colored).toImageMsg();
-  pub.publish(msg);
+  PublishImage(pub, disp_colored, cap_time, sensor_msgs::image_encodings::BGR8);
 
   return disp_colored;
 }
@@ -792,6 +835,7 @@ void* CaptureImages(void* param)
     if (camera.RecvLine(imgR, imgL) == 0)
     {
       pthread_mutex_lock(&imgCopyMutex);
+      image_cap_time = ros::Time::now();
       imgR.copyTo(imageR);
       imgL.copyTo(imageL);
       got_camera_frame = true;

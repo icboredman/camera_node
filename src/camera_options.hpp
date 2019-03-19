@@ -58,8 +58,9 @@ class Options
   bool publish_rectified;
   bool histogram_equalization;
   bool histogram_show;
-  int disparity_lines;
+  int  rect_lines;
   bool publish_disparity;
+  bool publish_depth;
   int   img3d_lines;
   float z_clearance_above;
   float z_clearance_below;
@@ -82,20 +83,21 @@ class Options
     nh.param("exposure", camconfig.exposure_us, 10000);
     nh.param("analogGain", camconfig.analogGain, 16);
     nh.param("digitalGain", camconfig.digitalGain, 4);
-    nh.param("numLines", camconfig.n_lines, 480);
+    nh.param("camLines", camconfig.n_lines, 480);
     nh.param("countsPerFrame", camconfig.cpf, 2);
     nh.param("autoExposure", camconfig.aec_enable, 0);
     nh.param("autoGain", camconfig.agc_enable, 0);
     nh.param("compEnable", camconfig.cmp_enable, 0);
 
     nh.param("pub_image", publish_raw_image, true);
-    nh.param("zoom_center", zoom_center, true);
+    nh.param("zoom_center", zoom_center, false);
     nh.param("pub_rect", publish_rectified, false);
     nh.param("hist_equal", histogram_equalization, false);
     nh.param("hist_show", histogram_show, false);
 
-    nh.param("disparity_lines", disparity_lines, 480);
+    nh.param("rect_lines", rect_lines, 480);
     nh.param("pub_disparity", publish_disparity, false);
+    nh.param("pub_depth", publish_depth, false);
 
     nh.param("image3d_lines", img3d_lines, 480);
     nh.param("z_clearance_above", z_clearance_above, (float)5.0);
