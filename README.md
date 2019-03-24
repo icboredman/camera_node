@@ -6,6 +6,8 @@ Depending on various options defined in [camera.launch](camera.launch), it can g
 * raw (both left and right) images
 * rectified images
 * disparity image
+* depth image
+* camera_info for the above images
 * point cloud
 * emulated laser scan
 
