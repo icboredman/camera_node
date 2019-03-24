@@ -91,10 +91,13 @@ void ZoomCenter(Mat& image, int size, int factor);
 void EqualizeHistogram1(Mat& image, int imgLines);
 void EqualizeHistogram2(Mat& image, int imgLines);
 void DrawHistogram(Mat& image, int imgLines);
-Mat GetRectificationMap(FileStorage &calib_file, Mat &lx, Mat &ly, Mat &rx, Mat &ry, Size calImgSize, Size outImgSize);
+Mat GetRectificationMap(FileStorage &calib_file,
+                        Mat &lx, Mat &ly, Mat &rx, Mat &ry,
+                        sensor_msgs::CameraInfo &ciL, sensor_msgs::CameraInfo &ciR,
+                        Size calImgSize, Size outImgSize);
 Mat GenerateDisparityImg(Mat &left, Mat &right, int disp_rows=0);
 
-void PublishImageInfo(image_transport::CameraPublisher &pub, Mat &img, ros::Time &cap_time, std::string encoding=sensor_msgs::image_encodings::MONO8);
+void PublishImageInfo(image_transport::CameraPublisher &pub, Mat &img, ros::Time &cap_time, sensor_msgs::CameraInfo *pci=NULL, std::string encoding=sensor_msgs::image_encodings::MONO8);
 void PublishImage(image_transport::Publisher &pub, Mat &img, ros::Time &cap_time, std::string encoding=sensor_msgs::image_encodings::MONO8);
 Mat  PublishDisparity(image_transport::Publisher &pub, Mat &disp, ros::Time &cap_time);
 void PublishPointCloud(ros::Publisher &pub, Mat &img3D, ros::Time &cap_time,
@@ -164,6 +167,7 @@ int main(int argc, char** argv)
 
   Mat mapLx, mapLy, mapRx, mapRy; // disparity coordinate maps
   Mat disp2depth; // aka Q
+  sensor_msgs::CameraInfo camInfoL, camInfoR;
 
   if (opt.publish_rectified ||
       opt.publish_disparity ||
@@ -181,6 +185,7 @@ int main(int argc, char** argv)
 
     disp2depth = GetRectificationMap(calib_file,
                                      mapLx, mapLy, mapRx, mapRy,
+                                     camInfoL, camInfoR,
                                      Size(serial::Camera::MAX_IMAGE_WIDTH, serial::Camera::MAX_IMAGE_HEIGHT),
                                      Size(serial::Camera::MAX_IMAGE_WIDTH, opt.rect_lines));
     ROS_DEBUG_STREAM("Rectification done");
@@ -308,8 +313,8 @@ int main(int argc, char** argv)
 
         if (opt.publish_rectified)
         {
-          PublishImageInfo(pub_rect_l, imLrec, capture_time);
-          PublishImageInfo(pub_rect_r, imRrec, capture_time);
+          PublishImageInfo(pub_rect_l, imLrec, capture_time, &camInfoL);
+          PublishImageInfo(pub_rect_r, imRrec, capture_time, &camInfoR);
           if (write_image)
           {
             WriteImage(imLrec, opt.image_save_path + "rect_left", write_image_counter);
@@ -486,7 +491,11 @@ void DrawHistogram(Mat& image, int imgLines)
 }
 
 
-Mat GetRectificationMap(FileStorage &calib_file, Mat &lx, Mat &ly, Mat &rx, Mat &ry, Size calImgSize, Size outImgSize)
+
+Mat GetRectificationMap(FileStorage &calib_file,
+                        Mat &lx, Mat &ly, Mat &rx, Mat &ry,
+                        sensor_msgs::CameraInfo &ciL, sensor_msgs::CameraInfo &ciR,
+                        Size calImgSize, Size outImgSize)
 {
   Mat XR, XT, Q, P1, P2;
   Mat R1, R2, K1, K2, R;
@@ -504,6 +513,30 @@ Mat GetRectificationMap(FileStorage &calib_file, Mat &lx, Mat &ly, Mat &rx, Mat 
 
 	cv::fisheye::stereoRectify(K1, D1, K2, D2, calImgSize, R, T, R1, R2, P1, P2,
 		Q, CV_CALIB_ZERO_DISPARITY, calImgSize, 0.0, 1.0);
+
+  // copy calibration matrices to camera info
+  ciL.distortion_model = "plumb_bob";
+  ciR.distortion_model = "plumb_bob";
+  ciL.D.resize(D1.channels);
+  ciR.D.resize(D1.channels);
+  for(int i=0; i<D1.channels; i++)
+  {
+    ciL.D[i] = D1[i];
+    ciR.D[i] = D2[i];
+  }
+  for(int i=0; i<3*3; i++)
+  {
+    ciL.K[i] = ((double*)K1.data)[i];
+    ciR.K[i] = ((double*)K2.data)[i];
+    ciL.R[i] = ((double*)R1.data)[i];
+    ciR.R[i] = ((double*)R2.data)[i];
+  }
+  for(int i=0; i<3*4; i++)
+  {
+    ciL.P[i] = ((double*)P1.data)[i];
+    ciR.P[i] = ((double*)P2.data)[i];
+  }
+
   // use temporary map images initially
   Mat clx, cly, crx, cry;
 	cv::fisheye::initUndistortRectifyMap(K1, D1, R1, P1, calImgSize, CV_32FC1, clx, cly);
@@ -569,7 +602,7 @@ Mat GenerateDisparityImg(Mat &left, Mat &right, int disp_rows)
 }
 
 
-void PublishImageInfo(image_transport::CameraPublisher &pub, Mat &img, ros::Time &cap_time, std::string encoding)
+void PublishImageInfo(image_transport::CameraPublisher &pub, Mat &img, ros::Time &cap_time, sensor_msgs::CameraInfo *pci, std::string encoding)
 {
   std_msgs::Header header = std_msgs::Header();
   header.stamp = cap_time;
@@ -577,8 +610,12 @@ void PublishImageInfo(image_transport::CameraPublisher &pub, Mat &img, ros::Time
   sensor_msgs::ImagePtr msg = cv_bridge::CvImage(header,
                                                  encoding,
                                                  img).toImageMsg();
+  sensor_msgs::CameraInfoPtr ci;
+  if (pci == NULL)
+    ci.reset(new sensor_msgs::CameraInfo());
+  else
+    ci.reset(new sensor_msgs::CameraInfo(*pci));
 
-  sensor_msgs::CameraInfoPtr ci(new sensor_msgs::CameraInfo());
   ci->header = header;
   ci->height = img.rows;
   ci->width = img.cols;
