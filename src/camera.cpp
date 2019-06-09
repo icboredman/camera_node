@@ -94,7 +94,7 @@ void DrawHistogram(Mat& image, int imgLines);
 Mat GetRectificationMap(FileStorage &calib_file,
                         Mat &lx, Mat &ly, Mat &rx, Mat &ry,
                         sensor_msgs::CameraInfo &ciL, sensor_msgs::CameraInfo &ciR,
-                        Size calImgSize, Size outImgSize);
+                        Size calImgSize, Size inImgSize, Size outImgSize);
 Mat GenerateDisparityImg(Mat &left, Mat &right, int disp_rows=0);
 
 void PublishImageInfo(image_transport::CameraPublisher &pub, Mat &img, ros::Time &cap_time, sensor_msgs::CameraInfo *pci=NULL, std::string encoding=sensor_msgs::image_encodings::MONO8);
@@ -187,6 +187,7 @@ int main(int argc, char** argv)
                                      mapLx, mapLy, mapRx, mapRy,
                                      camInfoL, camInfoR,
                                      Size(serial::Camera::MAX_IMAGE_WIDTH, serial::Camera::MAX_IMAGE_HEIGHT),
+                                     Size(serial::Camera::MAX_IMAGE_WIDTH, opt.camconfig.n_lines),
                                      Size(serial::Camera::MAX_IMAGE_WIDTH, opt.rect_lines));
     ROS_DEBUG_STREAM("Rectification done");
 
@@ -495,7 +496,7 @@ void DrawHistogram(Mat& image, int imgLines)
 Mat GetRectificationMap(FileStorage &calib_file,
                         Mat &lx, Mat &ly, Mat &rx, Mat &ry,
                         sensor_msgs::CameraInfo &ciL, sensor_msgs::CameraInfo &ciR,
-                        Size calImgSize, Size outImgSize)
+                        Size calImgSize, Size inImgSize, Size outImgSize)
 {
   Mat XR, XT, Q, P1, P2;
   Mat R1, R2, K1, K2, R;
@@ -552,16 +553,17 @@ Mat GetRectificationMap(FileStorage &calib_file,
   ry.create(outImgSize.height, outImgSize.width, CV_32FC1);
 
   // copy to output maps while compensating for vertical crop
-  int offs = (calImgSize.height - outImgSize.height) / 2;
+  int offs1 = (calImgSize.height - outImgSize.height) / 2;
+  int offs2 = (calImgSize.height - inImgSize.height) / 2;
 
   for (int y=0; y<outImgSize.height; y++)
   {
     for (int x=0; x<outImgSize.width; x++)
     {
-      lx.at<float>(y,x) = clx.at<float>(y+offs,x);
-      ly.at<float>(y,x) = cly.at<float>(y+offs,x) - (float)offs;
-      rx.at<float>(y,x) = crx.at<float>(y+offs,x);
-      ry.at<float>(y,x) = cry.at<float>(y+offs,x) - (float)offs;
+      lx.at<float>(y,x) = clx.at<float>(y+offs1,x);
+      ly.at<float>(y,x) = cly.at<float>(y+offs1,x) - (float)offs2;
+      rx.at<float>(y,x) = crx.at<float>(y+offs1,x);
+      ry.at<float>(y,x) = cry.at<float>(y+offs1,x) - (float)offs2;
     }
   }
 
