@@ -536,6 +536,9 @@ Mat GetRectificationMap(FileStorage &calib_file,
     ciL.P[i] = ((double*)P1.data)[i];
     ciR.P[i] = ((double*)P2.data)[i];
   }
+  // correct cy in matrix P to compensate for vertical crop
+  ciL.P[6] *= (double)outImgSize.height / (double)calImgSize.height;
+  ciR.P[6] *= (double)outImgSize.height / (double)calImgSize.height;
 
   // use temporary map images initially
   Mat clx, cly, crx, cry;
@@ -715,7 +718,7 @@ void PublishLaserScan(ros::Publisher &pub, Mat &img3D, ros::Time &cap_time,
   sensor_msgs::LaserScan scan;
 
   scan.header.stamp = cap_time;
-  scan.header.frame_id = "camera_frame";
+  scan.header.frame_id = "laser_frame";
   scan.angle_min = scan_angle_min;
   scan.angle_max = scan_angle_max;
   scan.angle_increment = scan_angle_increment;
