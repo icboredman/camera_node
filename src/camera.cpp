@@ -666,7 +666,7 @@ void PublishPointCloud( ros::Publisher &pub, Mat &img3D, ros::Time &cap_time,
                         float max_range)
 {
   pcl::PointCloud<pcl::PointXYZ> cloud;
-  cloud.header.frame_id = "camera_frame";
+  cloud.header.frame_id = "laser_frame";
   pcl_conversions::toPCL(cap_time, cloud.header.stamp);
   cloud.points.resize(0);
   //cloud.is_dense = true;
@@ -798,9 +798,13 @@ void PublishLaserScan(ros::Publisher &pub, Mat &img3D, ros::Time &cap_time,
       {
         range_this = ranges[y].at(z);
         if (abs(range_this - range_last) > range_this * 0.1)
-        { // calculate average of current cluster and save it
-          float mean = std::accumulate(cluster.begin(), cluster.end(), 0.0) / cluster.size();
-          collection.push_back(mean);
+        { // starting new cluster
+          if (cluster.size() >= 10)
+          { // too small clusters will be discarded as noise
+            // calculate average of current cluster and save it
+            float mean = std::accumulate(cluster.begin(), cluster.end(), 0.0) / cluster.size();
+            collection.push_back(mean);
+          }
           cluster.clear();
         }
         cluster.push_back(range_this);
