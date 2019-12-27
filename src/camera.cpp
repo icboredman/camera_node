@@ -598,11 +598,14 @@ Mat GenerateDisparityImg(Mat &left, Mat &right, int disp_rows)
   //param.speckle_size = 200;
   param.ipol_gap_width = 40;
   Elas elas(param);
-  elas.process( left.ptr<uchar>((left.rows - disp_rows) / 2),
-                right.ptr<uchar>((left.rows - disp_rows) / 2),
-                leftdpf.ptr<float>(0),
-                rightdpf.ptr<float>(0),
-                dims );
+  int status = elas.process( left.ptr<uchar>((left.rows - disp_rows) / 2),
+                             right.ptr<uchar>((left.rows - disp_rows) / 2),
+                             leftdpf.ptr<float>(0),
+                             rightdpf.ptr<float>(0),
+                             dims );
+  if (status == -1)
+    ROS_DEBUG("ELAS error: not enough input vertices");
+
   return leftdpf;
 }
 

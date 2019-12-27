@@ -11,7 +11,7 @@ Depending on various options defined in [camera.launch](camera.launch), it can g
 * point cloud
 * emulated laser scan
 
-The node implements [ELAS dense stereo algorithm](http://www.cvlibs.net/software/libelas/), specifically its OpenMP-version.
+This node makes use of [LIBELAS dense stereo library](http://www.cvlibs.net/software/libelas/), specifically its OpenMP-version.
 
 ### Prerequisites
 

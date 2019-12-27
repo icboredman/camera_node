@@ -9,10 +9,6 @@
         respawn="true"
         output="screen">
 
-<!--
-    <remap from="laserscan" to="/scan"/>
--->
-
     <!-- USB device hardware ID -->
     <param name="usb_hwid" value="1fc9:0094" />
 
@@ -32,7 +28,7 @@
     <!-- Camera Auto Exposure (1 or 0)-->
     <param name="autoExposure" value="1" />
     <!-- Camera Auto Gain Control (1 or 0)-->
-    <param name="autoGain" value="0" />
+    <param name="autoGain" value="1" />
     <!-- Camera Compounding (1 or 0)-->
     <param name="compEnable" value="0" />
 
@@ -44,7 +40,7 @@
     <param name="zoom_center" value="false" />
 
     <!-- Enable histogram equalization -->
-    <param name="hist_equal" value="true" />
+    <param name="hist_equal" value="false" />
     <!-- Enable histogram drawing -->
     <param name="hist_show" value="false" />
 

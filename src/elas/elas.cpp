@@ -29,7 +29,7 @@ Street, Fifth Floor, Boston, MA 02110-1301, USA
 
 using namespace std;
 
-void Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t* dims){
+int Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t* dims){
 
 	// get width, height and bytes per line
 	width  = dims[0];
@@ -68,6 +68,18 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t*
 	timer.start("Support Matches");
 #endif
 	vector<support_pt> p_support = computeSupportMatches(desc1.I_desc,desc2.I_desc);
+
+	// avoid exit() calls in triangle.cpp "Error:  Input must have at least three input vertices.\n"
+	// for example when staring at a blank wall
+	if (p_support.size() < 3)
+	{	// release memory
+		free(disparity_grid_1);
+		free(disparity_grid_2);
+		_mm_free(I1);
+		_mm_free(I2);
+		// return error status
+		return -1;
+	}
 
 #ifdef PROFILE
 	timer.start("Parallel Region #1 = {Delaunay Triangulation, Disparity Planes, Grid}");
@@ -154,6 +166,7 @@ vector<triangle> tri_1, tri_2;
 	free(disparity_grid_2);
 	_mm_free(I1);
 	_mm_free(I2);
+	return 0;
 }
 
 void Elas::removeInconsistentSupportPoints (int16_t* D_can,int32_t D_can_width,int32_t D_can_height) {
